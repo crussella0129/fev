@@ -34,8 +34,12 @@ func (t *GitTool) Description() string {
 	return "Git operations: status, diff, log, add, commit. Operations like push, pull, clone are not supported."
 }
 
+// PermissionTier returns Write. Read-only operations (status, diff, log) are safe
+// but the tool also supports write operations (add, commit), so the tier must
+// cover the most dangerous capability. Dynamic per-operation tiers would require
+// splitting into separate tools.
 func (t *GitTool) PermissionTier() permission.PermissionTier {
-	return permission.Write // add and commit modify state
+	return permission.Write
 }
 
 func (t *GitTool) Schema() json.RawMessage {
@@ -72,8 +76,14 @@ func (t *GitTool) Execute(ctx context.Context, rawArgs json.RawMessage) (*ToolRe
 		if len(args.Files) == 0 {
 			return nil, fmt.Errorf("git add requires files")
 		}
-		gitArgs := append([]string{"add"}, args.Files...)
-		return t.runGit(ctx, gitArgs...)
+		// Validate each file path against workspace boundary
+		for _, f := range args.Files {
+			if _, err := t.workspace.Resolve(f); err != nil {
+				return nil, fmt.Errorf("git add: %w", err)
+			}
+		}
+		cmdArgs := append([]string{"add"}, args.Files...)
+		return t.runGit(ctx, cmdArgs...)
 	case "commit":
 		if args.Message == "" {
 			return nil, fmt.Errorf("git commit requires a message")

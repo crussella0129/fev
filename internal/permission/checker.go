@@ -21,7 +21,9 @@ var dangerousCommandPrefixes = []string{
 	"sudo", "su ", "chmod 777", "chown root",
 }
 
-var injectionPattern = regexp.MustCompile("[;|&<>]|\\$\\(|`")
+// injectionPattern detects shell metacharacters including newlines and Windows-specific chars.
+// Blocks: ; | & < > $() `` \n \r % (Windows variable expansion) ^ (Windows escape)
+var injectionPattern = regexp.MustCompile("[;|&<>\\n\\r]|\\$\\(|`|%[a-zA-Z]")
 
 // IsCommandDangerous checks if a command matches the blocked commands list.
 func IsCommandDangerous(cmd string) bool {

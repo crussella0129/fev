@@ -72,6 +72,10 @@ func (t *GlobTool) Execute(ctx context.Context, rawArgs json.RawMessage) (*ToolR
 		if err != nil {
 			return nil // skip errors
 		}
+		// Respect context cancellation
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
 		// Skip hidden dirs and common noise
 		name := d.Name()
 		if d.IsDir() && (name == ".git" || name == "node_modules" || name == "vendor" || name == "__pycache__") {

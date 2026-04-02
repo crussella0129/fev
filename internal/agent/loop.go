@@ -19,7 +19,9 @@ func (a *Agent) loop(ctx context.Context) (string, error) {
 		maxTurns = 25
 	}
 
-	repeatTracker := make(map[string]int) // hash → count
+	repeatTracker := make(map[string]int) // hash → count (reset when different calls observed)
+	var lastCallHashes []string                // hashes from the previous turn, for repeat window
+	consecutiveErrors := 0                      // tracks retryable errors for backoff
 
 	for turn := 0; turn < maxTurns; turn++ {
 		// Trim history if needed
@@ -31,7 +33,8 @@ func (a *Agent) loop(ctx context.Context) (string, error) {
 		if err != nil {
 			class := core.ClassifyError(err)
 			if class == core.ErrorRetryable && turn < maxTurns-1 {
-				backoff := time.Duration(1<<uint(turn)) * time.Second
+				consecutiveErrors++
+				backoff := time.Duration(1<<uint(consecutiveErrors-1)) * time.Second
 				if backoff > 30*time.Second {
 					backoff = 30 * time.Second
 				}
@@ -45,6 +48,9 @@ func (a *Agent) loop(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("generation failed: %w", err)
 		}
 
+		// Successful generation — reset error counter
+		consecutiveErrors = 0
+
 		// No tool calls → done
 		if len(resp.ToolCalls) == 0 {
 			a.history = append(a.history, core.NewAssistantMessage(resp.Content))
@@ -54,11 +60,38 @@ func (a *Agent) loop(ctx context.Context) (string, error) {
 		// Deduplicate tool calls
 		toolCalls := core.DeduplicateToolCalls(resp.ToolCalls)
 
-		// Check repeat detection
+		// Check repeat detection — compare against previous turn's calls
+		currentHashes := make([]string, len(toolCalls))
+		for i, tc := range toolCalls {
+			currentHashes[i] = core.ToolCallHash(tc)
+		}
+
+		// If this turn's calls are identical to last turn's, increment repeat count
+		sameAsLast := len(currentHashes) == len(lastCallHashes)
+		if sameAsLast {
+			for i := range currentHashes {
+				if currentHashes[i] != lastCallHashes[i] {
+					sameAsLast = false
+					break
+				}
+			}
+		}
+
+		if sameAsLast {
+			for _, hash := range currentHashes {
+				repeatTracker[hash]++
+			}
+		} else {
+			// Different calls — reset tracker
+			repeatTracker = make(map[string]int)
+			for _, hash := range currentHashes {
+				repeatTracker[hash] = 1
+			}
+		}
+		lastCallHashes = currentHashes
+
 		allRepeated := true
-		for _, tc := range toolCalls {
-			hash := core.ToolCallHash(tc)
-			repeatTracker[hash]++
+		for _, hash := range currentHashes {
 			if repeatTracker[hash] < repeatThreshold {
 				allRepeated = false
 			}

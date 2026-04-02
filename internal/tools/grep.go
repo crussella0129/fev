@@ -2,11 +2,15 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/crussella0129/fev/internal/core"
@@ -121,9 +125,73 @@ func (t *GrepTool) executeRipgrep(ctx context.Context, rgPath string, args grepA
 }
 
 func (t *GrepTool) executeNative(ctx context.Context, args grepArgs, searchPath string, limit int) (*ToolResult, error) {
-	// Fallback: native Go implementation using filepath.WalkDir + regexp
-	// This is a simplified version; ripgrep is preferred
-	return &ToolResult{
-		Output: fmt.Sprintf("ripgrep not found. Install rg for better search. Searched for %q in %s", args.Pattern, searchPath),
-	}, nil
+	re, err := regexp.Compile(args.Pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex %q: %w", args.Pattern, err)
+	}
+
+	var results []string
+	count := 0
+
+	walkErr := filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			name := ""
+			if d != nil {
+				name = d.Name()
+			}
+			if d != nil && d.IsDir() && (name == ".git" || name == "node_modules" || name == "vendor" || name == "__pycache__") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
+
+		// Apply glob filter if specified
+		if args.Glob != "" {
+			matched, _ := filepath.Match(args.Glob, d.Name())
+			if !matched {
+				return nil
+			}
+		}
+
+		// Skip binary/large files
+		info, infoErr := d.Info()
+		if infoErr != nil || info.Size() > 5*1024*1024 {
+			return nil
+		}
+
+		f, openErr := os.Open(path)
+		if openErr != nil {
+			return nil
+		}
+		defer f.Close()
+
+		relPath, _ := filepath.Rel(searchPath, path)
+		scanner := bufio.NewScanner(f)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			if count >= limit {
+				return filepath.SkipAll
+			}
+			line := scanner.Text()
+			if re.MatchString(line) {
+				results = append(results, fmt.Sprintf("%s:%d:%s", filepath.ToSlash(relPath), lineNum, line))
+				count++
+			}
+		}
+		return nil
+	})
+
+	if walkErr != nil && ctx.Err() == nil {
+		return nil, fmt.Errorf("search error: %w", walkErr)
+	}
+
+	if len(results) == 0 {
+		return &ToolResult{Output: "No matches found."}, nil
+	}
+
+	return &ToolResult{Output: strings.Join(results, "\n")}, nil
 }

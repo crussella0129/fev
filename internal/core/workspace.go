@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -71,7 +72,14 @@ func (w *Workspace) Resolve(path string) (string, error) {
 	}
 
 	// Boundary check: real must be within root (or equal to root)
-	if !strings.HasPrefix(real, w.root) {
+	// On Windows, paths are case-insensitive — normalize before comparing
+	checkReal := real
+	checkRoot := w.root
+	if runtime.GOOS == "windows" {
+		checkReal = strings.ToLower(filepath.Clean(real))
+		checkRoot = strings.ToLower(filepath.Clean(w.root))
+	}
+	if !strings.HasPrefix(checkReal, checkRoot) {
 		return "", &WorkspaceBoundaryError{Path: path, Root: w.root}
 	}
 

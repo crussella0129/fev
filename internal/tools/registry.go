@@ -69,11 +69,18 @@ func (r *Registry) List() []string {
 }
 
 // ToOpenAISchemas returns tool schemas in OpenAI function-calling format.
+// Schemas are sorted by name for deterministic LLM behavior.
 func (r *Registry) ToOpenAISchemas() []llm.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	schemas := make([]llm.ToolSchema, 0, len(r.tools))
-	for _, t := range r.tools {
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	schemas := make([]llm.ToolSchema, 0, len(names))
+	for _, name := range names {
+		t := r.tools[name]
 		schemas = append(schemas, llm.ToolSchema{
 			Type: "function",
 			Function: llm.FunctionSchema{

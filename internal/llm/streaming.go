@@ -81,6 +81,7 @@ func (c *Client) GenerateStream(ctx context.Context, messages []core.Message, to
 	toolCallMap := make(map[int]*core.ToolCall) // index -> accumulated tool call
 
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024) // 256KB max line — LLM tool calls can be large
 	for scanner.Scan() {
 		line := scanner.Text()
 		data, done := parseSSELine(line)
