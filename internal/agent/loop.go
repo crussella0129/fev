@@ -127,6 +127,11 @@ func (a *Agent) loop(ctx context.Context) (string, error) {
 			// Truncate large output
 			result = tools.MaybeTruncate(result, 8000)
 			a.history = append(a.history, core.NewToolMessage(tc.ID, result.Output))
+
+			// Store file reads as facts in persistent memory.
+			if a.mem != nil && tc.Function.Name == "read_file" && result.FilePath != "" {
+				_, _ = a.mem.InsertFact("read file: "+result.FilePath, result.FilePath, 0)
+			}
 		}
 	}
 

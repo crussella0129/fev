@@ -8,6 +8,7 @@ import (
 	"github.com/crussella0129/fev/internal/core"
 	"github.com/crussella0129/fev/internal/ctxwin"
 	"github.com/crussella0129/fev/internal/llm"
+	"github.com/crussella0129/fev/internal/memory"
 	"github.com/crussella0129/fev/internal/tools"
 )
 
@@ -24,6 +25,10 @@ type Agent struct {
 	config   *config.Config
 	history  []core.Message
 	onChunk  func(string) // streaming callback (optional)
+
+	// Optional memory — nil if memory is not configured.
+	mem     *memory.Store
+	session *memory.Session
 }
 
 // New creates a new agent.
@@ -44,6 +49,13 @@ func (a *Agent) SetSystemPrompt(prompt string) {
 	} else {
 		a.history = append([]core.Message{core.NewSystemMessage(prompt)}, a.history...)
 	}
+}
+
+// SetMemory wires persistent memory into the agent.
+// When set, the agent stores file-read results as facts and adds session notes.
+func (a *Agent) SetMemory(store *memory.Store, session *memory.Session) {
+	a.mem = store
+	a.session = session
 }
 
 // SetStreaming sets the chunk callback for streaming output.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 
 	"github.com/crussella0129/fev/internal/agent"
@@ -14,11 +15,12 @@ import (
 	"github.com/crussella0129/fev/internal/core"
 	"github.com/crussella0129/fev/internal/ctxwin"
 	"github.com/crussella0129/fev/internal/llm"
+	"github.com/crussella0129/fev/internal/memory"
 	"github.com/crussella0129/fev/internal/tools"
 	"github.com/spf13/cobra"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 var (
 	cfgPath       string
@@ -123,9 +125,18 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 	// Create agent
 	a := agent.New(client, reg, ctxMgr, cfg)
 
-	// Load project config
+	// Initialize persistent memory
+	fevDir := fevHomeDir()
+	store, session := initMemory(fevDir)
+	if store != nil {
+		a.SetMemory(store, session)
+		defer store.Close()
+	}
+
+	// Load project config and latest review into system prompt
 	projectCfg, _ := config.LoadProjectConfig(ws.Root())
-	systemPrompt := buildSystemPrompt(projectCfg, reg)
+	latestReview, _ := memory.LoadLatestReview(filepath.Join(fevDir, "sessions"))
+	systemPrompt := buildSystemPrompt(projectCfg, reg, latestReview)
 	a.SetSystemPrompt(systemPrompt)
 
 	// Banner
@@ -134,17 +145,45 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 	fmt.Println("Type /help for commands, /exit to quit.")
 	fmt.Println()
 
-	// If task provided as args, run it
+	// If task provided as args, run it (no REPL, no review)
 	if len(args) > 0 {
 		task := strings.Join(args, " ")
 		return runTask(a, task)
 	}
 
 	// Interactive REPL
-	return repl(a)
+	return repl(a, client, store, session)
 }
 
-func repl(a *agent.Agent) error {
+// fevHomeDir returns ~/.fev, creating it if necessary.
+func fevHomeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	dir := filepath.Join(home, ".fev")
+	_ = os.MkdirAll(filepath.Join(dir, "sessions"), 0755)
+	return dir
+}
+
+// initMemory opens the persistent store and creates a new session.
+// Returns nil, nil on failure so the caller can proceed without memory.
+func initMemory(fevDir string) (*memory.Store, *memory.Session) {
+	store, err := memory.NewStore(filepath.Join(fevDir, "memory.db"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: memory unavailable: %v\n", err)
+		return nil, nil
+	}
+	session, err := memory.NewSession(filepath.Join(fevDir, "sessions"))
+	if err != nil {
+		store.Close()
+		fmt.Fprintf(os.Stderr, "warning: session unavailable: %v\n", err)
+		return nil, nil
+	}
+	return store, session
+}
+
+func repl(a *agent.Agent, client memory.ReviewClient, store *memory.Store, session *memory.Session) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -162,6 +201,7 @@ func repl(a *agent.Agent) error {
 		// Slash commands
 		switch {
 		case input == "/exit" || input == "/quit":
+			runExitReview(ctx, client, store, session)
 			fmt.Println("Goodbye.")
 			return nil
 		case input == "/help":
@@ -184,6 +224,20 @@ func repl(a *agent.Agent) error {
 	return scanner.Err()
 }
 
+// runExitReview generates and prints a post-session review on /exit.
+func runExitReview(ctx context.Context, client memory.ReviewClient, store *memory.Store, session *memory.Session) {
+	if client == nil || store == nil || session == nil {
+		return
+	}
+	fmt.Print("Generating session review... ")
+	summary, err := memory.Review(ctx, client, session, store)
+	if err != nil {
+		fmt.Printf("(skipped: %v)\n", err)
+		return
+	}
+	fmt.Printf("\nSession summary: %s\n", summary)
+}
+
 func runTask(a *agent.Agent, task string) error {
 	resp, err := a.Run(context.Background(), task)
 	if err != nil {
@@ -195,12 +249,12 @@ func runTask(a *agent.Agent, task string) error {
 
 func printHelp() {
 	fmt.Println("Commands:")
-	fmt.Println("  /exit, /quit    Exit Fev")
+	fmt.Println("  /exit, /quit    Exit Fev (generates session review)")
 	fmt.Println("  /reset          Clear conversation history")
 	fmt.Println("  /help           Show this help")
 }
 
-func buildSystemPrompt(projectConfig string, reg *tools.Registry) string {
+func buildSystemPrompt(projectConfig string, reg *tools.Registry, latestReview string) string {
 	var b strings.Builder
 	b.WriteString("You are Fev, a local-first coding assistant. You help users navigate and modify their codebase using structured tools.\n\n")
 	b.WriteString("Available tools: " + strings.Join(reg.List(), ", ") + "\n\n")
@@ -210,6 +264,11 @@ func buildSystemPrompt(projectConfig string, reg *tools.Registry) string {
 	if projectConfig != "" {
 		b.WriteString("\n--- Project Configuration ---\n")
 		b.WriteString(projectConfig)
+	}
+
+	if latestReview != "" {
+		b.WriteString("\n--- Previous Session ---\n")
+		b.WriteString(latestReview)
 	}
 
 	return b.String()
