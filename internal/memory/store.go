@@ -52,20 +52,20 @@ func migrate(db *sql.DB) error {
 			claim TEXT NOT NULL,
 			source_file TEXT,
 			source_line INTEGER,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			verified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			created_at INTEGER DEFAULT (strftime('%s','now')),
+			verified_at INTEGER DEFAULT (strftime('%s','now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS hunches (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			belief TEXT NOT NULL,
 			confidence REAL DEFAULT 0.5,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			created_at INTEGER DEFAULT (strftime('%s','now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS corrections (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			wrong_claim TEXT NOT NULL,
 			right_claim TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			created_at INTEGER DEFAULT (strftime('%s','now'))
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_file)`,
 		`CREATE INDEX IF NOT EXISTS idx_facts_claim ON facts(claim)`,

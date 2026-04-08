@@ -39,11 +39,11 @@ func (s *Store) RecentCorrections(limit int) ([]Correction, error) {
 	corrections := []Correction{}
 	for rows.Next() {
 		var c Correction
-		var createdStr string
-		if err := rows.Scan(&c.ID, &c.WrongClaim, &c.RightClaim, &createdStr); err != nil {
+		var createdUnix int64
+		if err := rows.Scan(&c.ID, &c.WrongClaim, &c.RightClaim, &createdUnix); err != nil {
 			return nil, fmt.Errorf("scan correction: %w", err)
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdStr)
+		c.CreatedAt = time.Unix(createdUnix, 0).UTC()
 		corrections = append(corrections, c)
 	}
 	return corrections, rows.Err()

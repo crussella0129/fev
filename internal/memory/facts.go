@@ -58,7 +58,7 @@ func (s *Store) FindFactsBySource(sourceFile string) ([]Fact, error) {
 // UpdateFactVerification marks a fact as re-verified at the current time.
 func (s *Store) UpdateFactVerification(id int64) error {
 	_, err := s.db.Exec(
-		`UPDATE facts SET verified_at = CURRENT_TIMESTAMP WHERE id = ?`, id,
+		`UPDATE facts SET verified_at = strftime('%s','now') WHERE id = ?`, id,
 	)
 	if err != nil {
 		return fmt.Errorf("update fact verification: %w", err)
@@ -83,12 +83,12 @@ func scanFacts(rows interface {
 	facts := []Fact{}
 	for rows.Next() {
 		var f Fact
-		var createdStr, verifiedStr string
-		if err := rows.Scan(&f.ID, &f.Claim, &f.SourceFile, &f.SourceLine, &createdStr, &verifiedStr); err != nil {
+		var createdUnix, verifiedUnix int64
+		if err := rows.Scan(&f.ID, &f.Claim, &f.SourceFile, &f.SourceLine, &createdUnix, &verifiedUnix); err != nil {
 			return nil, fmt.Errorf("scan fact: %w", err)
 		}
-		f.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdStr)
-		f.VerifiedAt, _ = time.Parse("2006-01-02 15:04:05", verifiedStr)
+		f.CreatedAt = time.Unix(createdUnix, 0).UTC()
+		f.VerifiedAt = time.Unix(verifiedUnix, 0).UTC()
 		facts = append(facts, f)
 	}
 	if err := rows.Err(); err != nil {

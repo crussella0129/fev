@@ -45,11 +45,11 @@ func (s *Store) FindHunches(query string, limit int) ([]Hunch, error) {
 	hunches := []Hunch{}
 	for rows.Next() {
 		var h Hunch
-		var createdStr string
-		if err := rows.Scan(&h.ID, &h.Belief, &h.Confidence, &createdStr); err != nil {
+		var createdUnix int64
+		if err := rows.Scan(&h.ID, &h.Belief, &h.Confidence, &createdUnix); err != nil {
 			return nil, fmt.Errorf("scan hunch: %w", err)
 		}
-		h.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdStr)
+		h.CreatedAt = time.Unix(createdUnix, 0).UTC()
 		hunches = append(hunches, h)
 	}
 	return hunches, rows.Err()
