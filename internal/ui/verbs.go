@@ -16,6 +16,11 @@ var (
 		"Mulling this over...",
 		"Connecting the dots...",
 		"Following the thread...",
+		"Marinating in thought...",
+		"Consulting the inner committee...",
+		"Untangling the yarn...",
+		"Brewing a take...",
+		"Squinting thoughtfully...",
 	}
 
 	ReadingVerbs = []string{
@@ -25,6 +30,11 @@ var (
 		"Studying the code...",
 		"Examining the contents...",
 		"Poring over the source...",
+		"Decoding ancient runes...",
+		"Befriending the code...",
+		"Eavesdropping on functions...",
+		"Catching up on lore...",
+		"Inspecting the artifact...",
 	}
 
 	SearchingVerbs = []string{
@@ -34,6 +44,11 @@ var (
 		"Searching far and wide...",
 		"Following the trail...",
 		"Narrowing it down...",
+		"Tickling the index...",
+		"Bushwhacking through directories...",
+		"Sniffing for clues...",
+		"Beating the bushes...",
+		"Tugging on threads...",
 	}
 
 	ExecutingVerbs = []string{
@@ -42,6 +57,11 @@ var (
 		"Waiting on the shell...",
 		"Processing...",
 		"Working on it...",
+		"Poking the shell...",
+		"Whispering to the OS...",
+		"Cajoling the subprocess...",
+		"Wrangling exit codes...",
+		"Coaxing the daemon...",
 	}
 
 	WritingVerbs = []string{
@@ -49,6 +69,11 @@ var (
 		"Writing changes...",
 		"Editing the source...",
 		"Applying modifications...",
+		"Whittling the bytes...",
+		"Conjuring code...",
+		"Calligraphing the diff...",
+		"Threading the needle...",
+		"Persuading the linter...",
 	}
 
 	CompactingVerbs = []string{
@@ -56,6 +81,10 @@ var (
 		"Consolidating memory...",
 		"Making room to think...",
 		"Organizing thoughts...",
+		"Tetris-ing the context...",
+		"Folding the messages...",
+		"Decluttering thoughts...",
+		"Vacuuming the buffer...",
 	}
 
 	SubagentVerbs = []string{
@@ -63,6 +92,10 @@ var (
 		"Agents at work...",
 		"Gathering intel...",
 		"Coordinating...",
+		"Summoning the squad...",
+		"Releasing the hounds...",
+		"Sending out scouts...",
+		"Hailing the away team...",
 	}
 )
 
