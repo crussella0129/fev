@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/crussella0129/fev/internal/agent"
 	"github.com/crussella0129/fev/internal/config"
 	"github.com/crussella0129/fev/internal/core"
@@ -17,10 +17,11 @@ import (
 	"github.com/crussella0129/fev/internal/llm"
 	"github.com/crussella0129/fev/internal/memory"
 	"github.com/crussella0129/fev/internal/tools"
+	"github.com/crussella0129/fev/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var version = "0.2.0"
+var version = "0.3.0"
 
 var (
 	cfgPath       string
@@ -151,8 +152,8 @@ func runInteractive(cmd *cobra.Command, args []string) error {
 		return runTask(a, task)
 	}
 
-	// Interactive REPL
-	return repl(a, client, store, session)
+	// Interactive UI
+	return runUI(a, client, store, session, cfg.Model.ModelName, ctxLen)
 }
 
 // fevHomeDir returns ~/.fev, creating it if necessary.
@@ -183,45 +184,66 @@ func initMemory(fevDir string) (*memory.Store, *memory.Session) {
 	return store, session
 }
 
-func repl(a *agent.Agent, client memory.ReviewClient, store *memory.Store, session *memory.Session) error {
+// runUI launches the bubbletea-based terminal UI. Slash commands are
+// intercepted in submit() so they never reach the agent loop. /exit sets
+// quitting=true and returns tea.Quit; the deferred review runs after the
+// program exits, keeping its output in the main terminal scrollback.
+func runUI(a *agent.Agent, client memory.ReviewClient, store *memory.Store, session *memory.Session, modelName string, maxTokens int) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Print("> ")
-		if !scanner.Scan() {
-			break
-		}
-		input := strings.TrimSpace(scanner.Text())
-		if input == "" {
-			continue
-		}
+	var quitting bool
 
-		// Slash commands
+	submit := func(input string) tea.Cmd {
+		// Slash commands handled here so the App stays generic — no agent
+		// or memory deps inside internal/ui.
 		switch {
 		case input == "/exit" || input == "/quit":
-			runExitReview(ctx, client, store, session)
-			fmt.Println("Goodbye.")
-			return nil
+			quitting = true
+			return tea.Quit
+
 		case input == "/help":
-			printHelp()
-			continue
+			return func() tea.Msg {
+				return ui.AgentResponseMsg{Content: helpText()}
+			}
+
 		case input == "/reset":
 			a.Reset()
-			fmt.Println("Conversation reset.")
-			continue
+			return func() tea.Msg {
+				return ui.AgentResponseMsg{Content: "_Conversation reset._"}
+			}
 		}
 
-		resp, err := a.Run(ctx, input)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			continue
+		// Normal turn: run agent.Run synchronously inside the cmd.
+		// Bubbletea executes cmds in their own goroutines, so the UI
+		// keeps animating the spinner while we wait.
+		return func() tea.Msg {
+			resp, err := a.Run(ctx, input)
+			return ui.AgentResponseMsg{Content: resp, Err: err}
 		}
-		fmt.Println(resp)
-		fmt.Println()
 	}
-	return scanner.Err()
+
+	app := ui.NewApp(ui.DefaultStyles(), modelName, maxTokens, submit)
+
+	prog := tea.NewProgram(app, tea.WithAltScreen())
+	if _, err := prog.Run(); err != nil {
+		return err
+	}
+
+	if quitting {
+		runExitReview(ctx, client, store, session)
+		fmt.Println("Goodbye.")
+	}
+	return nil
+}
+
+// helpText is the body shown when the user types /help in the UI. Returned
+// as markdown so glamour can render it.
+func helpText() string {
+	return "**Commands**\n\n" +
+		"- `/exit`, `/quit` — Exit Fev (generates session review)\n" +
+		"- `/reset` — Clear conversation history\n" +
+		"- `/help` — Show this help\n"
 }
 
 // runExitReview generates and prints a post-session review on /exit.
@@ -245,13 +267,6 @@ func runTask(a *agent.Agent, task string) error {
 	}
 	fmt.Println(resp)
 	return nil
-}
-
-func printHelp() {
-	fmt.Println("Commands:")
-	fmt.Println("  /exit, /quit    Exit Fev (generates session review)")
-	fmt.Println("  /reset          Clear conversation history")
-	fmt.Println("  /help           Show this help")
 }
 
 func buildSystemPrompt(projectConfig string, reg *tools.Registry, latestReview string) string {
