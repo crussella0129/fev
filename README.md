@@ -1,4 +1,4 @@
-# Fev
+#Animus Fev
 
 A local-first agentic CLI harness. Your personal assistant for navigating the digital space.
 
